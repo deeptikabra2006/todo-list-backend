@@ -38,22 +38,59 @@ class TodoService {
       query.tags = tag;
     }
 
-    // Determine sorting
-    let sortQuery = { createdAt: -1 }; // default
-    if (sortBy === "createdAt_asc") {
-      sortQuery = { createdAt: 1 };
-    } else if (sortBy === "dueDate_asc") {
-      sortQuery = { dueDate: 1 };
-    } else if (sortBy === "dueDate_desc") {
-      sortQuery = { dueDate: -1 };
-    } else if (sortBy === "title_asc") {
-      sortQuery = { title: 1 };
-    } else if (sortBy === "title_desc") {
-      sortQuery = { title: -1 };
-    } else if (sortBy === "status_asc" || sortBy === "status_desc" || sortBy === "priority_asc" || sortBy === "priority_desc") {
+    // Determine sorting using Aggregation
+    const pipeline = [
+      { $match: query }
+    ];
+
+    if (sortBy === "priority_asc" || sortBy === "priority_desc") {
+      pipeline.push({
+        $addFields: {
+          priorityWeight: {
+            $switch: {
+              branches: [
+                { case: { $eq: ["$priority", "HIGH"] }, then: 3 },
+                { case: { $eq: ["$priority", "MEDIUM"] }, then: 2 },
+                { case: { $eq: ["$priority", "LOW"] }, then: 1 }
+              ],
+              default: 0
+            }
+          }
+        }
+      });
       const dir = sortBy.endsWith("_desc") ? -1 : 1;
-      const field = sortBy.split("_")[0];
-      sortQuery = { [field]: dir };
+      pipeline.push({ $sort: { priorityWeight: dir, createdAt: -1 } });
+    } else if (sortBy === "status_asc" || sortBy === "status_desc") {
+      pipeline.push({
+        $addFields: {
+          statusWeight: {
+            $switch: {
+              branches: [
+                { case: { $eq: ["$status", "PENDING"] }, then: 1 },
+                { case: { $eq: ["$status", "IN_PROGRESS"] }, then: 2 },
+                { case: { $eq: ["$status", "COMPLETED"] }, then: 3 }
+              ],
+              default: 0
+            }
+          }
+        }
+      });
+      const dir = sortBy.endsWith("_desc") ? -1 : 1;
+      pipeline.push({ $sort: { statusWeight: dir, createdAt: -1 } });
+    } else {
+      let sortQuery = { createdAt: -1 }; // default
+      if (sortBy === "createdAt_asc") {
+        sortQuery = { createdAt: 1 };
+      } else if (sortBy === "dueDate_asc") {
+        sortQuery = { dueDate: 1 };
+      } else if (sortBy === "dueDate_desc") {
+        sortQuery = { dueDate: -1 };
+      } else if (sortBy === "title_asc") {
+        sortQuery = { title: 1 };
+      } else if (sortBy === "title_desc") {
+        sortQuery = { title: -1 };
+      }
+      pipeline.push({ $sort: sortQuery });
     }
 
     // Calculate stats based on user: userId (overall totals)
@@ -84,7 +121,7 @@ class TodoService {
 
     // If 'all' bypass query requested, return the complete list immediately (useful for dashboard calculations)
     if (all === "true" || all === true || limit === 0 || limit === "0" || limit === 0) {
-      const todos = await Todo.find(query).sort(sortQuery);
+      const todos = await Todo.aggregate(pipeline);
       return {
         todos,
         totalCount: todos.length,
@@ -97,10 +134,12 @@ class TodoService {
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
     const totalCount = await Todo.countDocuments(query);
-    const todos = await Todo.find(query)
-      .sort(sortQuery)
-      .skip(skip)
-      .limit(parseInt(limit));
+    
+    // Copy the pipeline to append skip and limit for paginated queries
+    const paginatedPipeline = [...pipeline];
+    paginatedPipeline.push({ $skip: skip });
+    paginatedPipeline.push({ $limit: parseInt(limit) });
+    const todos = await Todo.aggregate(paginatedPipeline);
 
     return {
       todos,
