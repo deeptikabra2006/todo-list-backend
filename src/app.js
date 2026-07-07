@@ -12,7 +12,7 @@ app.use(
   cors({
     origin: [
       "http://localhost:3000",
-      "https://todo-list-backend-three-wine.vercel.app/",
+      "https://todo-list-frontend-xi-ecru.vercel.app",
     ],
     credentials: true,
   })
