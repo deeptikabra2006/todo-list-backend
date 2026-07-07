@@ -10,9 +10,12 @@ const app = express();
 
 app.use(
   cors({
-    origin: "http://localhost:3000",
+    origin: [
+      "http://localhost:3000",
+      "https://todo-list-backend-three-wine.vercel.app/",
+    ],
     credentials: true,
-  }),
+  })
 );
 
 app.use(express.json({ limit: "10mb" }));
